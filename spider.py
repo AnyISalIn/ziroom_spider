@@ -71,14 +71,13 @@ class ZiroomSpider:
             'area': self.__get_area(house),
             'url': self.__get_url(house)
         }
-        singe_house = House(**attrs)
-        return singe_house
+        return House(**attrs)
 
     def houses(self, all=False):
         return [self.__house_info(h) for h in self.__houses(all)]
 
-    def cheapest(self, all=False):
-        return heapq.nsmallest(1, self.houses(all), lambda h: h.price)[0]
+    def cheapest(self, all=False, number=1):
+        return heapq.nsmallest(number, self.houses(all), lambda h: h.price)
 
-    def max_area(self, all=False):
-        return heapq.nlargest(1, self.houses(all), lambda h: h.area)[0]
+    def max_area(self, all=False, number=1):
+        return heapq.nlargest(number, self.houses(all), lambda h: float(h.area.replace('㎡', '')))
