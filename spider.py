@@ -19,9 +19,10 @@ class House:
 class ZiroomSpider:
     def __init__(self, url, page=1):
         self.url = url
-        self.page = page
+        self.data = requests.get(url, params={'p': page}).text
+        self.bs = bs(self.data, 'lxml')
 
-    def __get_data(self, url, page):
+    def __re_get_data(self, url, page):
         self.data = requests.get(url, params={'p': page}).text
         self.bs = bs(self.data, 'lxml')
 
@@ -29,12 +30,11 @@ class ZiroomSpider:
         return self.bs.find_all('div', attrs={'class': 'pages'})[0].find_all('a')[-2].text
 
     def __houses(self, all=False):
-        self.__get_data(self.url, self.page)
-        pages = int(self.__get_pages())
         if all is True:
+            pages = int(self.__get_pages())
             result = []
             for p in range(pages):
-                self.__get_data(self.url, p)
+                self.__re_get_data(self.url, p)
                 houses = self.bs.find_all('ul', attrs={'id': 'houseList'})[0]
                 result.append(houses.find_all('li', attrs={'class': 'clearfix'}))
             result = [item for sublist in result for item in sublist]
