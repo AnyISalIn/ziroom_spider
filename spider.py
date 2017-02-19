@@ -52,7 +52,9 @@ class ZiroomSpider:
         return house.find_all('h4')[0].text
 
     def __get_subway_distance(self, house):
-        return house.find_all('div', attrs={'class': 'detail'})[0].find_all('p')[-1].span.text
+        for item in house.find_all('div', attrs={'class': 'detail'})[0].find_all('p'):
+            if '距离' in item.text:
+                return item.text
 
     def __get_area(self, house):
         return house.p.span.text.replace(' ', '').replace('\n', '')
