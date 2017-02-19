@@ -22,7 +22,9 @@ class ZiroomSpider:
         self.data = requests.get(url, params={'p': page}).text
         self.bs = bs(self.data, 'lxml')
 
-    def __re_get_data(self, url, page):
+    def reget_data(self, url=None, page=1):
+        if url is None:
+            url = self.url
         self.data = requests.get(url, params={'p': page}).text
         self.bs = bs(self.data, 'lxml')
 
@@ -34,7 +36,7 @@ class ZiroomSpider:
             pages = int(self.__get_pages())
             result = []
             for p in range(pages):
-                self.__re_get_data(self.url, p)
+                self.reget_data(self.url, p)
                 houses = self.bs.find_all('ul', attrs={'id': 'houseList'})[0]
                 result.append(houses.find_all('li', attrs={'class': 'clearfix'}))
             result = [item for sublist in result for item in sublist]
