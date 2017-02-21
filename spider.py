@@ -1,6 +1,8 @@
 from bs4 import BeautifulSoup as bs
+import gevent
 import heapq
 import requests
+import grequests
 
 
 class House:
@@ -39,9 +41,11 @@ class ZiroomSpider:
         if all is True:
             pages = int(self.__get_pages())
             result = []
-            for p in range(pages):
-                self.reget_data(self.url, p)
-                houses = self.bs.find_all('ul', attrs={'id': 'houseList'})[0]
+            urls = [grequests.get(self.url, params={'p': p}) for p in range(1, pages + 1)]
+            res = grequests.map(urls)
+            for r in res:
+                async_bs = bs(r.text, 'lxml')
+                houses = async_bs.find_all('ul', attrs={'id': 'houseList'})[0]
                 result.append(houses.find_all('li', attrs={'class': 'clearfix'}))
             result = [item for sublist in result for item in sublist]
             return result
@@ -72,10 +76,12 @@ class ZiroomSpider:
         return house_bs.find_all('h3')[0].text.replace('\n', '').split(' ')[1]
 
     def __get_environment(self, house_bs, house_url):
-        return [e.text for e in house_bs.find_all('div', attrs={'class': 'aboutRoom gray-6'})[0].find_all('p') if '周边' in e.strong.text][0]
+        return [e.text for e in house_bs.find_all('div', attrs={'class': 'aboutRoom gray-6'})[0].find_all('p') if
+                '周边' in e.strong.text][0]
 
     def __get_traffic(self, house_bs, house_url):
-        return [e.text for e in house_bs.find_all('div', attrs={'class': 'aboutRoom gray-6'})[0].find_all('p') if '交通' in e.strong.text][0]
+        return [e.text for e in house_bs.find_all('div', attrs={'class': 'aboutRoom gray-6'})[0].find_all('p') if
+                '交通' in e.strong.text][0]
 
     def __get_detail(self, house_url):
         data = requests.get(house_url).text
@@ -102,7 +108,11 @@ class ZiroomSpider:
         return House(**attrs)
 
     def houses(self, all=False, detail=False):
-        return [self.__house_info(h, detail) for h in self.__houses(all=all)]
+        threads = []
+        for h in self.__houses(all=all):
+            threads.append(gevent.spawn(self.__house_info, h, detail=detail))
+        gevent.joinall(threads)
+        return [thread.value for thread in threads]
 
     def cheapest(self, all=False, detail=False, number=1):
         return heapq.nsmallest(number, self.houses(all=all, detail=detail), lambda h: h.price)
