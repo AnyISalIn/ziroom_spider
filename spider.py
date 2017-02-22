@@ -1,36 +1,18 @@
 from bs4 import BeautifulSoup as bs
-import gevent
-import heapq
+import re
 import requests
 import grequests
+from models import House, Subway, session
+from sqlalchemy import desc
+from logger import Logger
 
-
-class House:
-    def __init__(self, **kwargs):
-        self.location = kwargs.get('location')
-        self.price = kwargs.get('price')
-        self.subway = kwargs.get('subway')
-        self.subway_distance = kwargs.get('subway_distance')
-        self.area = kwargs.get('area')
-        self.url = kwargs.get('url')
-        if kwargs.get('detail'):
-            self.id = kwargs['detail'].get('id')
-            self.environment = kwargs['detail'].get('environment')
-            self.traffic = kwargs['detail'].get('traffic')
-
-    def __repr__(self):
-        return '<House {} {} {}>'.format(self.location, self.price, self.area)
+price_pattern = r'￥(?P<price>\d+)\(.*'
+o = re.compile(price_pattern)
 
 
 class ZiroomSpider:
     def __init__(self, url, page=1):
         self.url = url
-        self.data = requests.get(url, params={'p': page}).text
-        self.bs = bs(self.data, 'lxml')
-
-    def reget_data(self, url=None, page=1):
-        if url is None:
-            url = self.url
         self.data = requests.get(url, params={'p': page}).text
         self.bs = bs(self.data, 'lxml')
 
@@ -53,7 +35,8 @@ class ZiroomSpider:
         return houses.find_all('li', attrs={'class': 'clearfix'})
 
     def __get_price(self, house):
-        return house.find_all('p', attrs={'class': 'price'})[0].text.replace(' ', '').replace('\n', '')
+        m = o.search(house.find_all('p', attrs={'class': 'price'})[0].text.replace(' ', '').replace('\n', ''))
+        return int(m.groupdict().get('price'))
 
     def __get_location(self, house):
         return house.find_all('h3')[0].text
@@ -67,7 +50,7 @@ class ZiroomSpider:
                 return item.text
 
     def __get_area(self, house):
-        return house.p.span.text.replace(' ', '').replace('\n', '')
+        return float(house.p.span.text.replace(' ', '').replace('\n', '').replace('㎡', ''))
 
     def __get_url(self, house):
         return 'http:' + house.a.attrs.get('href')
@@ -87,35 +70,53 @@ class ZiroomSpider:
         data = requests.get(house_url).text
         house_bs = bs(data, 'lxml')
         detail_attr = {
-            'id': self.__get_id(house_bs, house_url),
+            'number': self.__get_id(house_bs, house_url),
             'environment': self.__get_environment(house_bs, house_url),
             'traffic': self.__get_traffic(house_bs, house_url)
         }
         return detail_attr
 
-    def __house_info(self, house, detail=False):
+    def __crawl_house_info(self, house):
         attrs = {
-            'location': self.__get_location(house),
+            'name': self.__get_location(house),
             'price': self.__get_price(house),
-            'subway': self.__get_subway(house),
             'subway_distance': self.__get_subway_distance(house),
             'area': self.__get_area(house),
             'url': self.__get_url(house)
         }
-        if detail is True:
-            attrs['detail'] = self.__get_detail(attrs.get('url'))
+        subway_name = self.__get_subway(house)
+        sw = session.query(Subway).filter(Subway.name == subway_name).first()
+        if sw is None:
+            sw = Subway(name=subway_name)
+        attrs['subway'] = sw
+        attrs.update(self.__get_detail(attrs.get('url')))
+        h = session.query(House).filter(House.number == attrs.get('number')).first()
+        if h is None:
+            h = House(**attrs)
+            session.add(h)
+            Logger.info('获取 {} 价格 {}'.format(h.name, h.price))
+        else:
+            Logger.info('{} 存在, 更新数据'.format(h.name))
+            for key, value in attrs.items():
+                setattr(h, key, value)
 
-        return House(**attrs)
+        session.commit()
 
-    def houses(self, all=False, detail=False):
-        threads = []
-        for h in self.__houses(all=all):
-            threads.append(gevent.spawn(self.__house_info, h, detail=detail))
-        gevent.joinall(threads)
-        return [thread.value for thread in threads]
+    def crawl_houses(self, all=False):
+        [self.__crawl_house_info(h) for h in self.__houses(all=all)]
 
-    def cheapest(self, all=False, detail=False, number=1):
-        return heapq.nsmallest(number, self.houses(all=all, detail=detail), lambda h: h.price)
+    @staticmethod
+    def query_houses():
+        return session.query(House)
 
-    def max_area(self, all=False, detail=False, number=1):
-        return heapq.nlargest(number, self.houses(all=all, detail=detail), lambda h: float(h.area.replace('㎡', '')))
+    @staticmethod
+    def query_subway():
+        return session.query(Subway)
+
+    @staticmethod
+    def max_area(limit=1):
+        return session.query(House).order_by(desc(House.area)).limit(limit).all()
+
+    @staticmethod
+    def cheapest(limit=1):
+        return session.query(House).order_by(House.price).limit(limit).all()
