@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup as bs
 import re
 import requests
 import grequests
+import gevent
 from models import House, Subway, session
 from sqlalchemy import desc
 from logger import Logger
@@ -76,6 +77,17 @@ class ZiroomSpider:
         }
         return detail_attr
 
+    def __crawl_subway(self, house):
+        subway_name = self.__get_subway(house)
+        sw = session.query(Subway).filter(Subway.name == subway_name).first()
+        if sw is None:
+            sw = Subway(name=subway_name)
+            Logger.info('获取地铁站 {}'.format(sw.name))
+            session.add(sw)
+            session.commit()
+        else:
+            Logger.info('地铁站 {} 存在'.format(sw.name))
+
     def __crawl_house_info(self, house):
         attrs = {
             'name': self.__get_location(house),
@@ -86,8 +98,6 @@ class ZiroomSpider:
         }
         subway_name = self.__get_subway(house)
         sw = session.query(Subway).filter(Subway.name == subway_name).first()
-        if sw is None:
-            sw = Subway(name=subway_name)
         attrs['subway'] = sw
         attrs.update(self.__get_detail(attrs.get('url')))
         h = session.query(House).filter(House.number == attrs.get('number')).first()
@@ -102,8 +112,18 @@ class ZiroomSpider:
 
         session.commit()
 
-    def crawl_houses(self, all=False):
-        [self.__crawl_house_info(h) for h in self.__houses(all=all)]
+    def crawl_houses(self, all=False, subway=True):
+        try:
+            if subway is True:
+                Logger.info('====== 开始抓取地铁数据 ========')
+                [self.__crawl_subway(h) for h in self.__houses(all=all)]
+            Logger.info('====== 开始抓取房子数据 ========')
+            threads = []
+            for h in self.__houses(all=all):
+                threads.append(gevent.spawn(self.__crawl_house_info, h))
+            gevent.joinall(threads)
+        except KeyboardInterrupt:
+            Logger.warn('终止抓取进程')
 
     @staticmethod
     def query_houses():
