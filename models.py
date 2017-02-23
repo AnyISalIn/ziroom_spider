@@ -1,17 +1,16 @@
-import os
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import String, Column, Boolean, Float, Text, Integer, create_engine, ForeignKey
 from sqlalchemy.orm import relationship, sessionmaker
+from config import config
 
-basedir = os.path.abspath(os.path.dirname(__name__))
-engine = create_engine('sqlite:///{}/test.data'.format(basedir))
+engine = create_engine(config['sqlite'])
 Base = declarative_base()
 
 
 class Subway(Base):
     __tablename__ = 'subways'
     id = Column(Integer, primary_key=True)
-    name = Column(String)
+    name = Column(String(64))
 
     houses = relationship('House', back_populates='subway')
 
@@ -23,12 +22,12 @@ class House(Base):
     __tablename__ = 'houses'
 
     id = Column(Integer, primary_key=True)
-    number = Column(String)
-    name = Column(String, index=True)
+    number = Column(String(64))
+    name = Column(String(64), index=True)
     area = Column(Float)
     price = Column(Integer)
-    subway_distance = Column(String)
-    url = Column(String)
+    subway_distance = Column(String(64))
+    url = Column(String(128))
     environment = Column(Text)
     traffic = Column(Text)
 

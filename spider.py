@@ -56,14 +56,14 @@ class ZiroomSpider:
     def __get_url(self, house):
         return 'http:' + house.a.attrs.get('href')
 
-    def __get_id(self, house_bs, house_url):
+    def __get_id(self, house_bs):
         return house_bs.find_all('h3')[0].text.replace('\n', '').split(' ')[1]
 
-    def __get_environment(self, house_bs, house_url):
+    def __get_environment(self, house_bs):
         return [e.text for e in house_bs.find_all('div', attrs={'class': 'aboutRoom gray-6'})[0].find_all('p') if
                 '周边' in e.strong.text][0]
 
-    def __get_traffic(self, house_bs, house_url):
+    def __get_traffic(self, house_bs):
         return [e.text for e in house_bs.find_all('div', attrs={'class': 'aboutRoom gray-6'})[0].find_all('p') if
                 '交通' in e.strong.text][0]
 
@@ -71,9 +71,9 @@ class ZiroomSpider:
         data = requests.get(house_url).text
         house_bs = bs(data, 'lxml')
         detail_attr = {
-            'number': self.__get_id(house_bs, house_url),
-            'environment': self.__get_environment(house_bs, house_url),
-            'traffic': self.__get_traffic(house_bs, house_url)
+            'number': self.__get_id(house_bs),
+            'environment': self.__get_environment(house_bs),
+            'traffic': self.__get_traffic(house_bs)
         }
         return detail_attr
 
