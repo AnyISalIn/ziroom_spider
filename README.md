@@ -1,5 +1,7 @@
 # ziroom_spider
 
+> 仅支持 `Python 3`
+
 ## usage
 
 ```python
