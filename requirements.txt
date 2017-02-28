@@ -1,0 +1,9 @@
+beautifulsoup4==4.5.3
+bs4==0.0.1
+gevent==1.2.1
+greenlet==0.4.12
+grequests==0.3.0
+lxml==3.7.3
+requests==2.13.0
+SQLAlchemy==1.1.5
+tabulate==0.7.7

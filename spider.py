@@ -3,7 +3,6 @@ from queue import Queue
 import re
 import requests
 import grequests
-import ipdb
 import gevent
 from models import House, Subway, session
 from sqlalchemy import desc
