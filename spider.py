@@ -1,7 +1,9 @@
 from bs4 import BeautifulSoup as bs
+from queue import Queue
 import re
 import requests
 import grequests
+import ipdb
 import gevent
 from models import House, Subway, session
 from sqlalchemy import desc
@@ -14,17 +16,18 @@ o = re.compile(price_pattern)
 class ZiroomSpider:
     def __init__(self, url, page=1):
         self.url = url
-        self.data = requests.get(url, params={'p': page}).text
-        self.bs = bs(self.data, 'lxml')
+        self._data = requests.get(url, params={'p': page}).text
+        self._bs = bs(self._data, 'lxml')
+        self._queue = Queue()
 
     def __get_pages(self):
-        return self.bs.find_all('div', attrs={'class': 'pages'})[0].find_all('a')[-2].text
+        return self._bs.find_all('div', attrs={'class': 'pages'})[0].find_all('a')[-2].text
 
-    def __houses(self, all=False):
+    def __houses(self, all=False, qwd=None):
         if all is True:
             pages = int(self.__get_pages())
             result = []
-            urls = [grequests.get(self.url, params={'p': p}) for p in range(1, pages + 1)]
+            urls = [grequests.get(self.url, params={'p': p, 'qwd': qwd}) for p in range(1, pages + 1)]
             res = grequests.map(urls)
             for r in res:
                 async_bs = bs(r.text, 'lxml')
@@ -32,7 +35,7 @@ class ZiroomSpider:
                 result.append(houses.find_all('li', attrs={'class': 'clearfix'}))
             result = [item for sublist in result for item in sublist]
             return result
-        houses = self.bs.find_all('ul', attrs={'id': 'houseList'})[0]
+        houses = self._bs.find_all('ul', attrs={'id': 'houseList'})[0]
         return houses.find_all('li', attrs={'class': 'clearfix'})
 
     def __get_price(self, house):
@@ -106,22 +109,34 @@ class ZiroomSpider:
             session.add(h)
             Logger.info('获取 {} 价格 {}'.format(h.name, h.price))
         else:
-            Logger.info('{} 存在, 更新数据'.format(h.name))
-            for key, value in attrs.items():
-                setattr(h, key, value)
+            if attrs.get('subway').name != h.subway.name:
+                tmp_subway = attrs['subway']
+            del attrs['subway']
+            session.query(House).filter(House.name == h.name).update(attrs)
+            if 'subway_2' in locals():
+                h.subway = tmp_subway
+            if h in session.dirty:
+                Logger.info('{} 数据更新'.format(h.name))
+                self._queue.put(h)
+            else:
+                Logger.info('{} 没有变化'.format(h.name))
 
         session.commit()
 
-    def crawl_houses(self, all=False, subway=True):
+    def crawl_houses(self, all=False, subway=True, qwd=None):
         try:
             if subway is True:
                 Logger.info('====== 开始抓取地铁数据 ========')
-                [self.__crawl_subway(h) for h in self.__houses(all=all)]
+                [self.__crawl_subway(h) for h in self.__houses(all=all, qwd=qwd)]
             Logger.info('====== 开始抓取房子数据 ========')
             threads = []
-            for h in self.__houses(all=all):
+            for h in self.__houses(all=all, qwd=qwd):
                 threads.append(gevent.spawn(self.__crawl_house_info, h))
             gevent.joinall(threads)
+            Logger.info('====== 抓取进程结束 ========')
+            if self._queue.empty() is not True:
+                Logger.info('此次抓取变化的房子如下')
+                [Logger.info(h) for h in self._queue.get()]
         except KeyboardInterrupt:
             Logger.warn('终止抓取进程')
 
@@ -134,9 +149,13 @@ class ZiroomSpider:
         return session.query(Subway)
 
     @staticmethod
-    def max_area(limit=1):
-        return session.query(House).order_by(desc(House.area)).limit(limit).all()
+    def max_area(limit=1, desc_=False):
+        if desc_ is True:
+            return session.query(House).order_by(desc(House.area)).limit(limit).all()
+        return session.query(House).order_by(House.area).limit(limit).all()
 
     @staticmethod
-    def cheapest(limit=1):
+    def cheapest(limit=1, desc_=True):
+        if desc_ is True:
+            return session.query(House).order_by(desc(House.price)).limit(limit).all()
         return session.query(House).order_by(House.price).limit(limit).all()
