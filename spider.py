@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup as bs
+import ipdb
 from queue import Queue
 import re
 import requests
@@ -17,16 +18,17 @@ class ZiroomSpider:
         self.url = url
         self._data = requests.get(url, params={'p': page}).text
         self._bs = bs(self._data, 'lxml')
-        self._queue = Queue()
+        self._changes = []
+        self._add = []
 
     def __get_pages(self):
         return self._bs.find_all('div', attrs={'class': 'pages'})[0].find_all('a')[-2].text
 
-    def __houses(self, all=False, qwd=None):
+    def __houses(self, all=False):
         if all is True:
             pages = int(self.__get_pages())
             result = []
-            urls = [grequests.get(self.url, params={'p': p, 'qwd': qwd}) for p in range(1, pages + 1)]
+            urls = [grequests.get(self.url, params={'p': p}) for p in range(1, pages + 1)]
             res = grequests.map(urls)
             for r in res:
                 async_bs = bs(r.text, 'lxml')
@@ -105,8 +107,8 @@ class ZiroomSpider:
         h = session.query(House).filter(House.number == attrs.get('number')).first()
         if h is None:
             h = House(**attrs)
-            session.add(h)
             Logger.info('获取 {} 价格 {}'.format(h.name, h.price))
+            self._add.append(h)
         else:
             if attrs.get('subway').name != h.subway.name:
                 tmp_subway = attrs['subway']
@@ -116,26 +118,29 @@ class ZiroomSpider:
                 h.subway = tmp_subway
             if h in session.dirty:
                 Logger.info('{} 数据更新'.format(h.name))
-                self._queue.put(h)
+                self._changes.append(h)
             else:
                 Logger.info('{} 没有变化'.format(h.name))
-
+        session.add(h)
         session.commit()
 
-    def crawl_houses(self, all=False, subway=True, qwd=None):
+    def crawl_houses(self, all=False, subway=True):
         try:
             if subway is True:
                 Logger.info('====== 开始抓取地铁数据 ========')
-                [self.__crawl_subway(h) for h in self.__houses(all=all, qwd=qwd)]
+                [self.__crawl_subway(h) for h in self.__houses(all=all)]
             Logger.info('====== 开始抓取房子数据 ========')
             threads = []
-            for h in self.__houses(all=all, qwd=qwd):
+            for h in self.__houses(all=all):
                 threads.append(gevent.spawn(self.__crawl_house_info, h))
             gevent.joinall(threads)
             Logger.info('====== 抓取进程结束 ========')
-            if self._queue.empty() is not True:
+            if len(self._changes) > 0:
                 Logger.info('此次抓取变化的房子如下')
-                [Logger.info(h) for h in self._queue.get()]
+                [Logger.info(h) for h in self._changes]
+            if not len(self._add) > 0:
+                Logger.info('此次抓取新增的房子如下')
+                [Logger.info(h) for h in self._add]
         except KeyboardInterrupt:
             Logger.warn('终止抓取进程')
 
