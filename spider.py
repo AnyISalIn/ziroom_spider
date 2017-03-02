@@ -1,6 +1,5 @@
 from bs4 import BeautifulSoup as bs
 import ipdb
-from queue import Queue
 import re
 import requests
 import grequests
@@ -138,8 +137,8 @@ class ZiroomSpider:
             if len(self._changes) > 0:
                 Logger.info('此次抓取变化的房子如下')
                 [Logger.info(h) for h in self._changes]
-            if not len(self._add) > 0:
-                Logger.info('此次抓取新增的房子如下')
+            if len(self._add) > 0:
+                Logger.info('====== 此次抓取新增的房子如下 ======')
                 [Logger.info(h) for h in self._add]
         except KeyboardInterrupt:
             Logger.warn('终止抓取进程')
